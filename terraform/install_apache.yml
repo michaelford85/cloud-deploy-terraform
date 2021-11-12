@@ -1,0 +1,34 @@
+---
+- name: Install and run apache
+  hosts: ec2
+  gather_facts: no
+
+  tasks:
+
+    - name: Install Apache
+      yum:
+        name: httpd
+        state: latest
+      become: yes
+
+    - name: Start Apache
+      service:
+        name: httpd
+        state: started
+      become: yes
+
+    - name: Create index.html file
+      copy:
+        dest: /var/www/html/index.html
+        content: "This is a newly created apache webserver running on {{ inventory_hostname }}."
+      notify: Restart Apache
+      become: yes
+
+
+  handlers:
+
+    - name: Restart Apache
+      service:
+        name: httpd
+        state: restarted
+      become: yes
