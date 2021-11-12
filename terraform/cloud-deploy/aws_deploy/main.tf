@@ -1,15 +1,7 @@
-terraform {
-  backend "remote" {
-    organization = "HashicorpAndRedHat"
-
-    workspaces {
-      name = "aws-self-service-demo"
-    }
-  }
-}
-
 provider "aws" {
   region     = var.ec2_region
+  access_key = var.access_key
+  secret_key = var.secret_key
 }
 
 resource "aws_vpc" "cloud-deploy-vpc" {
@@ -132,30 +124,6 @@ resource "aws_default_route_table" "cloud-deploy-route-table" {
 resource "tls_private_key" "cloud-deploy-tls-private-key" {
   algorithm = "RSA"
   rsa_bits  = 4096
-
-  provisioner "file" {
-    content      = tls_private_key.cloud-deploy-tls-private-key.private_key_pem
-    destination = "/tmp/${var.ec2_prefix}-key-private.pem"
-
-    connection {
-      type     = "ssh"
-      user     = "${var.tower_ssh_username}"
-      password = "${var.tower_ssh_password}"
-      host     = "${var.tower_hostname}"
-    }
-  }
-
-  provisioner "file" {
-    content      = tls_private_key.cloud-deploy-tls-private-key.public_key_openssh
-    destination = "/tmp/${var.ec2_prefix}-key.pub"
-
-    connection {
-      type     = "ssh"
-      user     = "${var.tower_ssh_username}"
-      password = "${var.tower_ssh_password}"
-      host     = "${var.tower_hostname}"
-    }
-  }
 }
 
 resource "aws_key_pair" "cloud-deploy-key" {
