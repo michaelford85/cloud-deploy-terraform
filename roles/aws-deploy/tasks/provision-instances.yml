@@ -1,0 +1,128 @@
+---
+- name: Set Machine Type to Micro
+  ansible.builtin.set_fact:
+    machine_type: t2.micro
+    ec2_root_volume_name: /dev/xvda
+  when: instance_size == "micro"
+
+- name: Set Machine Type to Small
+  ansible.builtin.set_fact:
+    machine_type: t2.small
+    ec2_root_volume_name: /dev/sda1
+  when: instance_size == "small"
+
+- name: Set Machine Type to Medium
+  ansible.builtin.set_fact:
+    machine_type: t2.medium
+    ec2_root_volume_name: /dev/sda1
+  when: instance_size == "medium"
+
+- name: Set Machine Type to large
+  ansible.builtin.set_fact:
+    machine_type: t2.large
+    ec2_root_volume_name: /dev/sda1
+  when: instance_size == "large"
+
+- name: Create AWS SSH Key Pair
+  amazon.aws.ec2_key:
+    region: "{{ ec2_region }}"
+    name: "{{ ec2_prefix }}-key"
+  register: create_key
+
+# This is just saving off the private key, this can only be done 1 time on the first creation of the key, pair
+- name: Save Private Key Locally
+  ansible.builtin.copy:
+    content: "{{ create_key.key.private_key }}"
+    dest: "{{ working_dir }}/{{ ec2_prefix }}-key-private.pem"
+    mode: '0600'
+  when: create_key.changed
+  no_log: yes
+
+- name: Derive Public Key from Private Key
+  ansible.builtin.command: "ssh-keygen -y -f {{ working_dir }}/{{ ec2_prefix }}-key-private.pem"
+  register: pubkey_output
+  when: create_key.changed
+  no_log: yes
+
+- name: Save Public Key Locally
+  ansible.builtin.copy:
+    content: "{{ pubkey_output.stdout }}"
+    dest: "{{ working_dir }}/{{ ec2_prefix }}-key.pub"
+    mode: '0400'
+  when: create_key.changed
+  no_log: yes
+
+- name: Update Ansible Tower Cloud SSH Credential
+  ansible.tower.tower_credential:
+    name: Cloud Demo Instances Key
+    organization: "Cloud Organization"
+    tower_host: "{{ tower_url }}"
+    tower_username: "{{ tower_user }}"
+    tower_password: "{{ tower_pass }}"
+    kind: ssh
+    username: "{{ aws_instance_username }}"
+    ssh_key_data: "{{ lookup('file', '{{ working_dir }}/{{ ec2_prefix }}-key-private.pem') }}"
+    tower_verify_ssl: false
+  delegate_to: localhost
+  run_once: true
+  when: create_key.changed
+
+- name: Gather Subnet Information
+  amazon.aws.ec2_vpc_subnet_info:
+    region: "{{ ec2_region }}"
+    filters:
+      "tag:application": "{{ application }}"
+      "tag:provisioner": "mford"
+  register: subnet_info
+
+
+- name: "Create ec2 secrets engine instance"
+  amazon.aws.ec2:
+    assign_public_ip: true
+    key_name: "{{ ec2_prefix }}-key"
+    group: "{{ ec2_prefix }}-sg"
+    instance_type: t2.medium
+    image: "{{ ec2_image_id }}"
+    region: "{{ ec2_region }}"
+    count: 1
+    wait: "{{ ec2_wait }}"
+    vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
+    instance_tags:
+      provisioner: mford
+      application: "{{ application }}"
+      Name: "{{ application }}-webserver"
+      demo: appdeployment
+      group: webserver
+      ec2_prefix: "{{ ec2_prefix }}"
+      cloud_provider: aws
+    volumes:
+      - device_name: /dev/sda1
+        volume_type: gp2
+        volume_size: 10
+        delete_on_termination: true
+
+
+- name: "Create EC2 instances for {{ application }}"
+  amazon.aws.ec2:
+    assign_public_ip: true
+    key_name: "{{ ec2_prefix }}-key"
+    group: "{{ ec2_prefix }}-sg"
+    instance_type: "{{ machine_type }}"
+    image: "{{ ec2_image_id }}"
+    region: "{{ ec2_region }}"
+    count: "{{ num_instances }}"
+    wait: "{{ ec2_wait }}"
+    vpc_subnet_id: "{{ subnet_info.subnets[0].id }}"
+    instance_tags:
+      provisioner: mford
+      application: "{{ application }}"
+      Name: "{{ application }}-server"
+      demo: appdeployment
+      group: rhel
+      ec2_prefix: "{{ ec2_prefix }}"
+      cloud_provider: aws
+    volumes:
+      - device_name: "{{ ec2_root_volume_name }}"
+        volume_type: gp2
+        volume_size: "{{ ec2_root_volume_size }}"
+        delete_on_termination: true

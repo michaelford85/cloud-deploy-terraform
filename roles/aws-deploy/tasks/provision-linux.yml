@@ -1,0 +1,32 @@
+---
+- block:
+
+  - name: Install insights-client
+    ansible.builtin.yum:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - insights-client
+    become: yes
+
+  # - name: upgrade all packages
+  #   yum:
+  #     name: '*'
+  #     state: latest
+  #     disablerepo: rhel-7-server-htb-rpms
+  #   become: yes
+
+  - name: Install Apache
+    ansible.builtin.yum:
+      name: httpd
+      state: latest
+    become: yes
+
+  # - name: Register with Red Hat Insights
+  #   ansible.builtin.command: insights-client --register
+  #   become: yes
+
+  - name: build report
+    ansible.builtin.include_role:
+      name: build_report
+  when: tags.group == "rhel"

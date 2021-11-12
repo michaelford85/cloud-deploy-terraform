@@ -1,0 +1,181 @@
+---
+- name: Provision Cloud infrastructure via Terraform
+  hosts: localhost
+  gather_facts: no
+  vars:
+    machine_type: default
+  vars_files:
+    - ./credentials/tower_creds.yml
+    - ./vars/default-vars.yml
+
+  tasks:
+
+    - name: Provision GCP infrastructure via Terraform
+      block:
+
+        - name: Set Machine Type to Small
+          ansible.builtin.set_fact:
+            machine_type: g1-small
+          when: instance_size == "small"
+
+        - name: Set Machine Type to Medium
+          ansible.builtin.set_fact:
+            machine_type: n1-standard-1
+          when: instance_size == "medium"
+
+        - name: Set Machine Type to large
+          ansible.builtin.set_fact:
+            machine_type: n1-standard-2
+          when: instance_size == "large"
+
+        - name: Copy GCP Terraform Directory
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/terraform/cloud-deploy/gcp_deploy"
+            dest: /tmp
+            mode: 0777
+
+        - name: Initialize Terraform
+          ansible.builtin.command:
+            cmd: terraform init
+            chdir: /tmp/gcp_deploy
+
+        - name: Provision GCP infrastructure via Terraform
+          community.general.terraform:
+            project_path: /tmp/gcp_deploy
+            state: present
+            variables:
+              gcp_region: "{{ gcp_region }}"
+              gcp_prefix: "{{ gcp_prefix }}"
+              gcp_key: '{{ lookup("env", "GCE_CREDENTIALS_FILE_PATH") }}'
+              gcp_project: '{{ lookup("env", "GCE_PROJECT") }}'
+              num_instances: "{{ num_instances }}"
+              application: "{{ application }}"
+              #RHEL8
+              gcp_disk_image: "{{ gcp_disk_image }}"
+              machine_type: "{{ machine_type }}"
+          register: terraform_output
+          # no_log: true
+
+        - name: Debug Terraform output
+          ansible.builtin.debug:
+            var: terraform_output
+          tags:
+            - debug
+
+        - name: Update Ansible Tower Cloud SSH Credential
+          ansible.tower.tower_credential:
+            name: Cloud Demo Instances Key
+            organization: "Cloud Organization"
+            tower_host: "{{ tower_url }}"
+            tower_username: "{{ tower_user }}"
+            tower_password: "{{ tower_pass }}"
+            kind: ssh
+            username: "{{ gcp_instance_username }}"
+            ssh_key_data: "{{ lookup('file', '/tmp/id_ssh_rsa') }}"
+            tower_verify_ssl: false
+
+      when: cloud_provider == "gcp"
+
+    - name: Provision Resources on AWS
+      block:
+
+        - name: Set Machine Type to Small
+          ansible.builtin.set_fact:
+            machine_type: t2.small
+            # ec2_root_volume_name: /dev/sda1
+          when: instance_size == "small"
+
+        - name: Set Machine Type to Medium
+          ansible.builtin.set_fact:
+            machine_type: t2.medium
+            # ec2_root_volume_name: /dev/sda1
+          when: instance_size == "medium"
+
+        - name: Set Machine Type to large
+          ansible.builtin.set_fact:
+            machine_type: t2.large
+            # ec2_root_volume_name: /dev/sda1
+          when: instance_size == "large"
+
+        - name: Copy AWS Terraform Directory
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/terraform/cloud-deploy/aws_deploy"
+            dest: /tmp
+            mode: 0777
+
+        # - shell:
+        #     cmd: ansible-vault decrypt main.tf --vault-id ~/.ssh/.vault
+        #     chdir: /tmp/aws_deploy
+
+        - name: Initialize Terraform
+          ansible.builtin.command:
+            cmd: terraform init
+            chdir: /tmp/aws_deploy
+            # chdir: "{{ playbook_dir }}/terraform/cloud-deploy/aws_deploy"
+
+        - name: Provision AWS infrastructure via Terraform
+          community.general.terraform:
+            project_path: /tmp/aws_deploy
+            # project_path: "{{ playbook_dir }}/terraform/cloud-deploy/aws_deploy"
+            state: present
+            variables:
+              ec2_region: "{{ ec2_region }}"
+              ec2_prefix: "{{ ec2_prefix }}"
+              access_key: '{{ lookup("env", "AWS_ACCESS_KEY_ID") }}'
+              secret_key: '{{ lookup("env", "AWS_SECRET_ACCESS_KEY") }}'
+              num_instances: "{{ num_instances }}"
+              application: "{{ application }}"
+              #RHEL8
+              ec2_image_id: "{{ ec2_image_id }}"
+              machine_type: "{{ machine_type }}"
+          register: terraform_output
+          # no_log: true
+
+        - name: Debug Terraform output
+          ansible.builtin.debug:
+            var: terraform_output
+          tags:
+            - debug
+
+        # - shell:
+        #     cmd: ansible-vault encrypt main.tf --vault-id ~/.ssh/.vault
+        #     chdir: /tmp/aws_deploy
+
+        - name: Update Ansible Tower Cloud SSH Credential
+          ansible.tower.tower_credential:
+            name: Cloud Demo Instances Key
+            organization: "Cloud Organization"
+            tower_host: "{{ tower_url }}"
+            tower_username: "{{ tower_user }}"
+            tower_password: "{{ tower_pass }}"
+            kind: ssh
+            username: "{{ aws_instance_username }}"
+            ssh_key_data: "{{ lookup('file', '/tmp/' + ec2_prefix + '-key-private.pem') }}"
+            # ssh_key_data: "{{ lookup('file', '/tmp/mford-linux-key-private.pem') }}"
+            tower_verify_ssl: false
+
+      when: cloud_provider == "aws"
+
+
+
+    # - name: Initialize Terraform
+    #   command:
+    #     cmd: terraform init
+    #     chdir: ./terraform/cloud-deploy/gcp_deploy
+    #
+    # - name: Provision AWS Instances/Resources via Terraform
+    #   terraform:
+    #     project_path: ./terraform/cloud-deploy/gcp_deploy
+    #     state: present
+    #     # force_init: yes
+    #     variables:
+    #       num_instances: 5
+    #       ec2_image_id: ami-098f16afa9edf40be
+    #       machine_type: t2.micro
+    #   register: terraform_output
+    #
+    # - name: Debug Terraform output
+    #   debug:
+    #     var: terraform_output
+    #   tags:
+    #     - debug

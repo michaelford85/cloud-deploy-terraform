@@ -1,0 +1,54 @@
+#How to install docker CE in RHEL8
+#https://linuxconfig.org/how-to-install-docker-in-rhel-8
+#Solves issue of containerd.io > 1.2.0-3.el7 dependency
+---
+- block:
+  - name: Remove docker directory
+    ansible.builtin.file:
+      path: /var/lib/docker/
+      state: absent
+    become: yes
+
+  - name: Remove existing Docker repositories from /etc/yum.repos.d/
+    ansible.builtin.file:
+      path: /etc/yum.repos.d/docker*.repo
+      state: absent
+    become: yes
+
+  - name: Remove docker if installed from CentOS repo
+    ansible.builtin.yum:
+      name: "{{ packages }}"
+      state: removed
+    become: yes
+    vars:
+      packages:
+        - docker
+        - docker-client
+        - docker-client-latest
+        - docker-common
+        - docker-latest
+        - docker-latest-logrotate
+        - docker-logrotate
+        - docker-engine
+        - docker-ce
+        - docker-ce-cli
+
+  - name: Uninstall the latest available containerd.io package manually
+    ansible.builtin.yum:
+      name: containerd.io-1.2.6-3.3.el7.x86_64
+      state: removed
+    become: yes
+
+  - name: install the 'Container tools' package group
+    ansible.builtin.yum:
+      name: "@container-tools"
+      state: present
+    become: yes
+
+  - name: install the podman-docker package group
+    ansible.builtin.yum:
+      name: podman-docker
+      state: present
+    become: yes
+
+  when: labels.group == "webserver"

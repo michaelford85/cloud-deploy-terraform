@@ -1,0 +1,72 @@
+---
+- block:
+  - name: Wait for instances to be reachable
+    ansible.builtin.wait_for_connection:
+      sleep: 5
+      timeout: 600
+
+  - name: Install subscription-manager
+    ansible.builtin.yum:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - subscription-manager
+      - subscription-manager-migration
+      - subscription-manager-migration-data
+    become: yes
+
+  - name: Register with activationkey and consume subscriptions matching Red Hat Enterprise Linux Server
+    community.general.redhat_subscription:
+      state: present
+      activationkey: "{{ rhactivationkey }}"
+      org_id: "{{ rhorg_id }}"
+      # auto_attach: true
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  - name: Install package rhc-worker-playbook
+    ansible.builtin.dnf:
+      state: present
+      name: rhc-worker-playbook
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  - name: Enable the Subscription-Manager repository
+    ansible.builtin.command: subscription-manager config --rhsm.manage_repos=1
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  - name: Enable the RHSM repository
+    community.general.rhsm_repository:
+      name: ansible-2.9-for-rhel-8-x86_64-rpms
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  - name: Install package ansible
+    ansible.builtin.dnf:
+      state: present
+      name: ansible
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  - name: Disable the Subscription-Manager repository
+    ansible.builtin.command: subscription-manager config --rhsm.manage_repos=0
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  - name: Unregister from Red Hat Subscription Manager
+    community.general.redhat_subscription:
+      state: absent
+    become: yes
+    when: tags.cloud_provider == "aws"
+
+  # - name: Disconnect Red Hat Connector
+  #   ansible.builtin.command: rhc disconnect
+  #   become: yes
+  #   ignore_errors: yes
+  #   when: tags.cloud_provider == "aws"
+
+  - name: Connect Red Hat Connector
+    ansible.builtin.command: "rhc connect -a {{ rhactivationkey }} -o {{ rhorg_id }}"
+    become: yes
+    when: tags.cloud_provider == "aws"
